@@ -24,6 +24,7 @@ private:
     std::vector<std::vector<std::vector<int>>> nodeInterpolants;
     
     bool isAClause(int nodeId);
+    bool isALocal(int var);
     bool isSharedVar(int var);
 };
 

@@ -14,4 +14,6 @@ clean:
 	rm -f bmc src/*.o out.cnf proof.txt result.txt
 
 test: bmc
-	./bmc 10 test.aag
+	./bmc 5 demo/buggy.aag; \
+	./bmc 20 demo/safe_small.aag; \
+	./bmc 10 demo/safe_medium.aag
