@@ -8,7 +8,7 @@ out.cnf
 proof.txt
 result.txt
 
-# Dependencies (document in README)
+# Dependencies 
 minisatp/
 aiger-1.9.9/
 benchmarks/
