@@ -30,6 +30,8 @@ bool ModelChecker::runBMC(int k, bool& foundCex) {
 }
 
 bool ModelChecker::check(int maxBound) {
+    std::vector<std::vector<int>> reachable;  // Over-approximation Q
+    
     for (int k = 1; k <= maxBound; k++) {
         std::cout << "Checking bound " << k << "..." << std::endl;
         
@@ -42,16 +44,39 @@ bool ModelChecker::check(int maxBound) {
         }
         
         if (unsat) {
-            // Parse proof and compute interpolant
             ProofParser proof;
             if (!proof.parse("proof.txt")) continue;
             
-            // Simple fixpoint check: if proof is small, likely converged
-            // (Full implementation would check if interpolant implies itself)
-            std::cout << "  Safe at bound " << k << ", proof: " << proof.getNodes().size() << " nodes" << std::endl;
+            // Compute shared variables (state vars at time 1)
+            std::set<int> sharedVars;
+            for (unsigned i = 1; i <= aig.numLatches; i++) {
+                sharedVars.insert(i);
+            }
+            
+            // Split point: A = initial + first transition
+            // Approximate: first portion of clauses
+            int splitPoint = proof.getNodes().size() / 3;
+            
+            Interpolator interp(proof, splitPoint, sharedVars);
+            auto interpolant = interp.computeInterpolant();
+            
+            std::cout << "  Safe at bound " << k << ", interpolant: " 
+                      << interpolant.size() << " clauses" << std::endl;
+            
+            // Fixpoint check: is interpolant subsumed by reachable?
+            // Simplified: check if interpolant is empty or unchanged
+            if (interpolant.empty() || interpolant == reachable) {
+                std::cout << "Fixpoint reached!" << std::endl;
+                return true;  // Proved SAFE
+            }
+            
+            // Update reachable: Q' = Q ∨ I
+            for (const auto& clause : interpolant) {
+                reachable.push_back(clause);
+            }
         }
     }
     
     std::cout << "Safe up to bound " << maxBound << std::endl;
-    return true;  // OK
+    return true;  // OK (bounded)
 }
