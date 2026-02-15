@@ -1,0 +1,18 @@
+# Build artifacts
+*.o
+bmc
+
+# Generated files
+*.aag
+out.cnf
+proof.txt
+result.txt
+
+# Dependencies (document in README)
+minisatp/
+aiger-1.9.9/
+benchmarks/
+
+# Archives
+*.zip
+*.tar.gz
