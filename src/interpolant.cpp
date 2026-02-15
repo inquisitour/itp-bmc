@@ -13,13 +13,15 @@ bool Interpolator::isSharedVar(int var) {
     return sharedVars.count(var) > 0;
 }
 
-// Helper to check if variable is A-local (only in A, not in B)
 bool Interpolator::isALocal(int var) {
-    return !isSharedVar(var);  // Simplified: non-shared = local
+    return !isSharedVar(var);
 }
 
 std::vector<std::vector<int>> Interpolator::computeInterpolant() {
     const auto& nodes = proof.getNodes();
+    
+    if (nodes.empty()) return {};
+    
     nodeInterpolants.resize(nodes.size());
     
     for (size_t i = 0; i < nodes.size(); i++) {
@@ -27,7 +29,6 @@ std::vector<std::vector<int>> Interpolator::computeInterpolant() {
         
         if (node.isRoot) {
             if (isAClause(i)) {
-                // A-clause: I = disjunction of shared literals
                 std::vector<int> sharedLits;
                 for (int lit : node.clause) {
                     if (isSharedVar(std::abs(lit))) {
@@ -35,33 +36,45 @@ std::vector<std::vector<int>> Interpolator::computeInterpolant() {
                     }
                 }
                 if (sharedLits.empty()) {
-                    nodeInterpolants[i] = {};  // represents FALSE
+                    nodeInterpolants[i] = {};
                 } else {
                     nodeInterpolants[i] = {sharedLits};
                 }
             } else {
-                // B-clause: I = conjunction of negated shared literals
                 std::vector<std::vector<int>> cnf;
                 for (int lit : node.clause) {
                     if (isSharedVar(std::abs(lit))) {
                         cnf.push_back({-lit});
                     }
                 }
-                nodeInterpolants[i] = cnf;  // empty = TRUE
+                nodeInterpolants[i] = cnf;
             }
         } else {
-            // Resolution: Res(C1 ∨ x, C2 ∨ ¬x) with interpolants I1, I2
+            // Bounds check for chain IDs
+            if (node.chainIds.empty()) {
+                nodeInterpolants[i] = {};
+                continue;
+            }
+            
             int id1 = node.chainIds[0];
+            if (id1 < 0 || id1 >= (int)nodeInterpolants.size()) {
+                nodeInterpolants[i] = {};
+                continue;
+            }
+            
             auto result = nodeInterpolants[id1];
             
             for (size_t j = 0; j < node.chainVars.size(); j++) {
+                if (j + 1 >= node.chainIds.size()) break;
+                
                 int var = node.chainVars[j] + 1;
                 int id2 = node.chainIds[j + 1];
+                
+                if (id2 < 0 || id2 >= (int)nodeInterpolants.size()) continue;
+                
                 const auto& i2 = nodeInterpolants[id2];
                 
                 if (isSharedVar(var)) {
-                    // Shared: I = (x ∨ I1) ∧ (¬x ∨ I2)
-                    // In CNF: add x to each clause of I1, add ¬x to each clause of I2
                     std::vector<std::vector<int>> newResult;
                     for (auto clause : result) {
                         clause.push_back(var);
@@ -72,15 +85,13 @@ std::vector<std::vector<int>> Interpolator::computeInterpolant() {
                         newResult.push_back(clause);
                     }
                     if (result.empty()) {
-                        newResult.push_back({var});  // FALSE ∨ x = x
+                        newResult.push_back({var});
                     }
                     if (i2.empty()) {
-                        newResult.push_back({-var}); // TRUE needs ¬x clause
+                        newResult.push_back({-var});
                     }
                     result = newResult;
                 } else {
-                    // A-local or B-local: I = I1 ∨ I2 or I = I1 ∧ I2
-                    // For simplicity, use AND (conjunction = union of CNF)
                     for (const auto& clause : i2) {
                         result.push_back(clause);
                     }

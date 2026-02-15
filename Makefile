@@ -16,4 +16,6 @@ clean:
 test: bmc
 	./bmc 5 demo/buggy.aag; \
 	./bmc 20 demo/safe_small.aag; \
-	./bmc 10 demo/safe_medium.aag
+	./bmc 10 demo/safe_medium.aag; \
+	./bmc 20 demo/s298.aag; \
+	./bmc 20 demo/bakery.aag
