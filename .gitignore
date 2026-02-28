@@ -15,7 +15,3 @@ benchmarks/
 
 #Demo
 demo/
-
-# Archives
-*.zip
-*.tar.gz
