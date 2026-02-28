@@ -8,8 +8,8 @@ class CNFGenerator {
 public:
     CNFGenerator(const AIG& aig);
     
-    // Generate CNF for BMC up to bound k
-    void generateBMC(int k);
+    // Generate CNF for BMC up to bound k with optional skip for initial states
+    void generateBMC(int k, int skip = 0);
     
     // Get CNF in DIMACS format
     const std::vector<std::vector<int>>& getClauses() const { return clauses; }

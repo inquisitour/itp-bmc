@@ -9,13 +9,13 @@ public:
     ModelChecker(const AIG& aig);
     
     // Returns true if SAFE, false if FAIL
-    bool check(int maxBound);
+    bool check(int maxBound, int skip = 0);
     
 private:
     const AIG& aig;
     std::vector<std::vector<int>> reachable;  // over-approximation of reachable states
     
-    bool runBMC(int k, bool& foundCex);
+    bool runBMC(int k, bool& foundCex, int skip = 0);
 };
 
 #endif

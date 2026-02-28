@@ -64,43 +64,39 @@ void CNFGenerator::encodeTransition(int t) {
 }
 
 void CNFGenerator::encodeBad(int t) {
-    // Output literal is "bad state" detector
-    // We want to check if bad is reachable
-    int bad = getCNFVar(aig.outputs[0], t);
-    addClause({bad});  // Assert bad state at time t
+    for (const auto& out : aig.outputs) {
+        // Each output independently asserted — used for single-step checks
+        addClause({getCNFVar(out, t)});
+    }
 }
 
-void CNFGenerator::generateBMC(int k) {
+void CNFGenerator::generateBMC(int k, int skip) {
     clauses.clear();
     varMap.clear();
     nextVar = 1;
-    
+
     // Initial state
     encodeInit();
-    
-    // Transitions for timeframes 0..k-1
+
+    // Transitions AND gates for timeframes 0..k-1
     for (int t = 0; t < k; t++) {
-        encodeTransition(t);
+        encodeTransition(t);  // encodes ANDs + latch next-state for time t
     }
-    
-    // Encode AND gates at final timeframe
+
+    // AND gates at final timeframe k
     for (const auto& gate : aig.ands) {
         encodeAnd(gate, k);
     }
-    
-    // Bad state reachable at ANY timeframe 0..k
-    // (bad_0 OR bad_1 OR ... OR bad_k)
+
+    // Bad state only from skip+1 onwards
     std::vector<int> badClause;
-    for (int t = 0; t <= k; t++) {
-        // Encode ANDs needed for output at time t
-        if (t > 0) {
-            for (const auto& gate : aig.ands) {
-                encodeAnd(gate, t);
-            }
+    for (int t = skip + 1; t <= k; t++) {
+        for (const auto& out : aig.outputs) {
+            badClause.push_back(getCNFVar(out, t));
         }
-        badClause.push_back(getCNFVar(aig.outputs[0], t));
     }
-    addClause(badClause);
+    if (!badClause.empty())
+        addClause(badClause);
 }
 
 void CNFGenerator::writeDIMACS(const std::string& filename) {

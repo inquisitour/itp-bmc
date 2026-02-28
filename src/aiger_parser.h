@@ -25,7 +25,7 @@ struct AIG {
     
     std::vector<unsigned> inputs;
     std::vector<Latch> latches;
-    std::vector<unsigned> outputs;  // bad state detectors
+    std::vector<unsigned> outputs;  // bad state detectors (outputs + bad props)
     std::vector<AndGate> ands;
     
     // Helper: literal to variable
