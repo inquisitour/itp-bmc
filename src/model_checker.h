@@ -14,7 +14,7 @@ public:
 private:
     const AIG& aig;
     
-    bool runBMC(int k, bool& foundCex, int& aPartSize, int skip = 0);
+    bool runBMC(int k, bool& foundCex, int& aPartSize, std::vector<int>& latchVars, int skip = 0);
 };
 
 #endif
