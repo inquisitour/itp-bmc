@@ -20,7 +20,9 @@ clean:
 
 test: bmc
 	BMC_WORKDIR=. ./bmc 5 demo/buggy.aag; \
+	BMC_WORKDIR=. ./bmc 20 demo/unsafe_k3.aag; \
 	BMC_WORKDIR=. ./bmc 20 demo/safe_small.aag; \
 	BMC_WORKDIR=. ./bmc 10 demo/safe_medium.aag; \
 	BMC_WORKDIR=. ./bmc 20 demo/s298.aag; \
-	BMC_WORKDIR=. ./bmc 20 demo/bakery.aag
+	BMC_WORKDIR=. ./bmc 20 demo/bakery.aag; \
+	BMC_WORKDIR=. ./bmc 20 demo/true_safe.aag

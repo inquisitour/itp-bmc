@@ -33,38 +33,36 @@ bool ProofParser::parse(const std::string& filename) {
         if ((tmp & 1) == 0) {
             // Root clause
             node.isRoot = true;
-            int idx = tmp >> 1;
-            if (idx > 0) {
-                int lit = (idx >> 1) + 1;
+            int idx = (int)(tmp >> 1);
+            
+            // idx == 0 is a valid literal (CNF var 1, positive) — NOT empty clause
+            // Decode first literal unconditionally
+            int lit = (idx >> 1) + 1;
+            if (idx & 1) lit = -lit;
+            node.clause.push_back(lit);
+
+            while (true) {
+                uint64_t delta = getUInt(f);
+                if (delta == 0) break;
+                idx += (int)delta;
+                lit = (idx >> 1) + 1;
                 if (idx & 1) lit = -lit;
                 node.clause.push_back(lit);
-                
-                while (true) {
-                    uint64_t delta = getUInt(f);
-                    if (delta == 0) break;
-                    idx += delta;
-                    lit = (idx >> 1) + 1;
-                    if (idx & 1) lit = -lit;
-                    node.clause.push_back(lit);
-                }
-            } else {
-                // Empty clause case
-                getUInt(f); // consume terminator
             }
         } else {
             // Chain
             node.isRoot = false;
-            int idDelta = tmp >> 1;
+            int idDelta = (int)(tmp >> 1);
             if (idDelta > id) break;  // sanity check
             node.chainIds.push_back(id - idDelta);
             
             while (true) {
                 uint64_t v = getUInt(f);
                 if (v == 0) break;
-                node.chainVars.push_back(v - 1);
+                node.chainVars.push_back((int)(v - 1));
                 uint64_t delta = getUInt(f);
                 if ((int)delta > id) break;
-                node.chainIds.push_back(id - delta);
+                node.chainIds.push_back(id - (int)delta);
             }
             
             if (node.chainVars.empty()) {

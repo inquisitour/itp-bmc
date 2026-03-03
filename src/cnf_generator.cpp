@@ -2,7 +2,7 @@
 #include <fstream>
 #include <iostream>
 
-CNFGenerator::CNFGenerator(const AIG& aig) : aig(aig), nextVar(1) {}
+CNFGenerator::CNFGenerator(const AIG& aig) : aig(aig), nextVar(1), aPartClauses(0) {}
 
 int CNFGenerator::getCNFVar(unsigned aigLit, int time) {
     unsigned var = AIG::lit2var(aigLit);
@@ -14,10 +14,24 @@ int CNFGenerator::getCNFVar(unsigned aigLit, int time) {
     
     if (varMap[time][var] == 0) {
         varMap[time][var] = nextVar++;
+        // AIG variable 0 is constant FALSE — force it
+        if (var == 0) {
+            addClause({-varMap[time][var]});
+        }
     }
     
     int cnfVar = varMap[time][var];
     return AIG::isNegated(aigLit) ? -cnfVar : cnfVar;
+}
+
+std::vector<int> CNFGenerator::getLatchCNFVars(int t) const {
+    std::vector<int> vars;
+    for (const auto& latch : aig.latches) {
+        unsigned v = AIG::lit2var(latch.var);
+        if ((int)varMap.size() > t && varMap[t][v] != 0)
+            vars.push_back(varMap[t][v]);
+    }
+    return vars;
 }
 
 void CNFGenerator::addClause(const std::vector<int>& clause) {
@@ -64,22 +78,25 @@ void CNFGenerator::encodeTransition(int t) {
 }
 
 void CNFGenerator::encodeBad(int t) {
-    for (const auto& out : aig.outputs) {
-        // Each output independently asserted — used for single-step checks
-        addClause({getCNFVar(out, t)});
-    }
+    // Output literal is "bad state" detector
+    // We want to check if bad is reachable
+    int bad = getCNFVar(aig.outputs[0], t);
+    addClause({bad});  // Assert bad state at time t
 }
 
 void CNFGenerator::generateBMC(int k, int skip) {
     clauses.clear();
     varMap.clear();
     nextVar = 1;
+    aPartClauses = 0;
 
     // Initial state
     encodeInit();
+    if (k >= 1) encodeTransition(0);
+    aPartClauses = (int)clauses.size();  // A = init + T(s0,s1)
 
-    // Transitions AND gates for timeframes 0..k-1
-    for (int t = 0; t < k; t++) {
+    // Transitions AND gates for timeframes 1..k-1
+    for (int t = 1; t < k; t++) {
         encodeTransition(t);  // encodes ANDs + latch next-state for time t
     }
 
