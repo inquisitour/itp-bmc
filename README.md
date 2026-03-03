@@ -53,11 +53,14 @@ Requires [sby_engine_itp.py](https://github.com/YosysHQ/sby) to be installed in 
 ## How It Works
 
 1. Unrolls the AIGER transition relation up to bound `k`
-2. Encodes as CNF using Tseitin transformation
-3. Calls MiniSAT with proof logging
-4. Extracts Craig interpolant from resolution proof
-5. Checks fixpoint: if interpolant stabilizes, property is proved safe
-6. Iterates until fixpoint or counterexample found
+2. Encodes as CNF using Tseitin transformation with correct constant-0 forcing
+3. Splits the CNF into A-part (init + first transition) and B-part (remaining transitions + bad states) using the actual clause boundary
+4. Calls MiniSAT with proof logging; deletes stale proof before each run
+5. Parses the resolution proof with correct literal decoding (index 0 = CNF var 1)
+6. Extracts Craig interpolant using the Huang/Krajíček/Pudlák system: A-clauses labelled FALSE, B-clauses labelled TRUE, shared pivots use OR, local pivots use AND
+7. Uses correct CNF variable IDs of latches at the partition boundary as shared variables
+8. Checks fixpoint via clause subsumption: if every clause of the new interpolant is subsumed by the current over-approximation, the property is proved safe for all reachable executions
+9. Iterates until fixpoint or counterexample found
 
 ## Tested On
 
