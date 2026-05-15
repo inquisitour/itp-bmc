@@ -105,15 +105,15 @@ void CNFGenerator::generateBMC(int k, int skip) {
         encodeAnd(gate, k);
     }
 
-    // Bad state only from skip+1 onwards
-    std::vector<int> badClause;
-    for (int t = skip + 1; t <= k; t++) {
+    // Bad state only at final timeframe k
+    if (k > skip) {
+        std::vector<int> badClause;
         for (const auto& out : aig.outputs) {
-            badClause.push_back(getCNFVar(out, t));
+            badClause.push_back(getCNFVar(out, k));
         }
+        if (!badClause.empty())
+            addClause(badClause);
     }
-    if (!badClause.empty())
-        addClause(badClause);
 }
 
 void CNFGenerator::writeDIMACS(const std::string& filename) {
