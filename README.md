@@ -64,7 +64,13 @@ Requires [sby_engine_itp.py](https://github.com/YosysHQ/sby) to be installed in 
 
 ## Tested On
 
-- [riscv-formal](https://github.com/YosysHQ/riscv-formal) NERV core: `insn_add`, `insn_sub`, `insn_and`, `insn_or`, `insn_xor`, `insn_lui` (all PASS)
+- [riscv-formal](https://github.com/YosysHQ/riscv-formal) RISC-V cores (instructions: add, sub, and, or, xor, lui — all 24 checks PASS with fixpoint convergence at bound 2):
+  - NERV (4820 latches, 91259 ANDs)
+  - PicoRV32 (2238 latches, 35748 ANDs)
+  - SERV (1626 latches, 16282 ANDs)
+  - VexRiscv (58770 latches, 536617 ANDs)
+
+Note: circuit sizes include riscv-formal property scaffolding. Use `skip=0` for fixpoint convergence.
 
 ## Dependencies
 
@@ -89,3 +95,4 @@ minisatp/                  # MiniSAT with proof logging
 - No counterexample witness output (planned)
 - ASCII AIGER output not supported (binary `.aig` input only via aiger library)
 - Justice/liveness properties ignored (safety checking only)
+- Fixpoint convergence guaranteed with `skip=0` only; non-zero skip returns bounded results
