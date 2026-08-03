@@ -20,6 +20,7 @@ bool ProofParser::parse(const std::string& filename) {
     
     nodes.clear();
     int id = 0;
+    int clauseId = 0;
     
     while (true) {
         int firstByte = fgetc(f);
@@ -33,6 +34,7 @@ bool ProofParser::parse(const std::string& filename) {
         if ((tmp & 1) == 0) {
             // Root clause
             node.isRoot = true;
+            node.clauseIdx = clauseId++;
             int idx = (int)(tmp >> 1);
             
             // idx == 0 is a valid literal (CNF var 1, positive) — NOT empty clause

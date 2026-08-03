@@ -17,7 +17,8 @@ Interpolator::Interpolator(const ProofParser& proof, int splitPoint,
     : proof(proof), splitPoint(splitPoint), sharedVars(sharedVars) {}
 
 bool Interpolator::isAClause(int nodeId) {
-    return nodeId < splitPoint;
+    const auto& node = proof.getNodes()[nodeId];
+    return node.isRoot && node.clauseIdx < splitPoint;
 }
 
 bool Interpolator::isSharedVar(int var) {

@@ -7,6 +7,7 @@
 
 struct ProofNode {
     bool isRoot;
+    int clauseIdx = -1;
     std::vector<int> clause;      // For root nodes
     std::vector<int> chainIds;    // For chain nodes: clause IDs
     std::vector<int> chainVars;   // For chain nodes: pivot variables

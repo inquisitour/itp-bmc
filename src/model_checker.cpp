@@ -66,8 +66,6 @@ bool ModelChecker::runBMC(int k, bool& foundCex, int& aPartSize, std::vector<int
 }
 
 bool ModelChecker::check(int maxBound, int skip) {
-    std::cout << "DEBUG BMC_WORKDIR=" << getWorkdir() << std::endl;
-    std::cout << "DEBUG BinaryDir=" << getBinaryDir() << std::endl;
     std::string workdir    = getWorkdir();
     std::string proof_path = workdir + "/proof.txt";
     std::vector<std::vector<int>> reachable;
