@@ -8,6 +8,7 @@
 struct Latch {
     unsigned var;       // latch variable (even number)
     unsigned next;      // next state literal
+    unsigned reset;   // 0 = init false, 1 = init true, else = undefined/free
 };
 
 struct AndGate {
@@ -26,6 +27,7 @@ struct AIG {
     std::vector<unsigned> inputs;
     std::vector<Latch> latches;
     std::vector<unsigned> outputs;  // bad state detectors (outputs + bad props)
+    std::vector<unsigned> constraints;   // invariant literals, must hold at every t
     std::vector<AndGate> ands;
     
     // Helper: literal to variable

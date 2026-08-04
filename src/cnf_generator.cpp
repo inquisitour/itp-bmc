@@ -74,10 +74,13 @@ void CNFGenerator::encodeAnd(const AndGate& gate, int t) {
 }
 
 void CNFGenerator::encodeInit() {
-    // All latches start at 0
     for (const auto& latch : aig.latches) {
         int var = getCNFVar(latch.var, 0);
-        addClause({-var});  // latch = false at time 0
+        if (latch.reset == 0)
+            addClause({-var});          // starts low
+        else if (latch.reset == 1)
+            addClause({var});           // starts high
+        // otherwise: unconstrained, emit nothing
     }
 }
 
@@ -111,15 +114,13 @@ void CNFGenerator::generateBMC(int k, int skip) {
     nextVar = 1;
     aPartClauses = 0;
 
-    // Pre-allocate t=1 latch vars first so they get low CNF IDs
-    // This makes MiniSAT use them as decision variables → shared pivots in proof
-    if (k >= 1) {
-        for (const auto& latch : aig.latches)
-            getCNFVar(latch.var, 1);
-    }
-
     encodeInit();
     if (k >= 1) encodeTransition(0);
+    // constraints at t=0 and t=1 → part of A
+    for (unsigned c : aig.constraints) {
+        addClause({getCNFVar(c, 0)});
+        if (k >= 1) addClause({getCNFVar(c, 1)});
+    }
     aPartClauses = (int)clauses.size();
 
     // Transitions AND gates for timeframes 1..k-1
@@ -131,6 +132,11 @@ void CNFGenerator::generateBMC(int k, int skip) {
     for (const auto& gate : aig.ands) {
         encodeAnd(gate, k);
     }
+
+    // constraints at t=2..k → part of B
+    for (int t = 2; t <= k; t++)
+        for (unsigned c : aig.constraints)
+            addClause({getCNFVar(c, t)});
 
     // Bad state only at final timeframe k
     if (k > skip) {
@@ -150,6 +156,11 @@ void CNFGenerator::generateIMC(int k,
     varMap.clear();
     nextVar = 1;
     aPartClauses = 0;
+
+    // Allocate every latch's t=0 var FIRST, before sel and before the
+    // transition, so init / prevApprox / T all refer to the same variables.
+    for (const auto& latch : aig.latches)
+        getCNFVar(latch.var, 0);
 
     // Encode transition T(s0,s1) — establishes t=0 and t=1 CNF var IDs
     encodeTransition(0);
@@ -179,6 +190,12 @@ void CNFGenerator::generateIMC(int k,
             addClause(cnfClause);
     }
 
+    // constraints at t=0 and t=1 → part of A
+    for (unsigned c : aig.constraints) {
+        addClause({getCNFVar(c, 0)});
+        addClause({getCNFVar(c, 1)});
+    }
+
     aPartClauses = (int)clauses.size(); // A = (init ∨ prevApprox) ∧ T(s0,s1)
 
     // B: remaining transitions t=1..k-1
@@ -188,6 +205,11 @@ void CNFGenerator::generateIMC(int k,
     // AND gates at final timeframe k
     for (const auto& gate : aig.ands)
         encodeAnd(gate, k);
+
+    // constraints at t=2..k → part of B
+    for (int t = 2; t <= k; t++)
+        for (unsigned c : aig.constraints)
+            addClause({getCNFVar(c, t)});
 
     // Bad at final timeframe k
     std::vector<int> badClause;

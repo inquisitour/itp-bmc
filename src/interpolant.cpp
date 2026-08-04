@@ -30,6 +30,11 @@ Interpolator::Interpolator(const ProofParser& proof,
     for (int v : aVars)
         if (!bVars.count(v))
             aLocalVars.insert(v);
+
+    std::cerr << "DEBUG aVars=" << aVars.size()
+              << " bVars=" << bVars.size()
+              << " aLocal=" << aLocalVars.size()
+              << " shared=" << (aVars.size() - aLocalVars.size()) << std::endl;
 }
 
 bool Interpolator::isAClause(int nodeId) {
@@ -132,28 +137,21 @@ std::vector<std::vector<int>> Interpolator::computeInterpolant() {
 
         if (node.isRoot) {
             if (isAClause((int)i)) {
-                nodeInterpolants[i] = FALSE_CNF;
-            } else {
-                // B-clause: restrict to shared variables
                 std::vector<int> sharedLits;
                 for (int lit : node.clause)
-                    if (sharedVars.count(std::abs(lit)))
+                    if (!aLocalVars.count(std::abs(lit)))
                         sharedLits.push_back(lit);
-                // Empty sharedLits means no shared vars in this clause → TRUE
+                std::cerr << "DEBUG Aroot " << i << " lit=";
+                for (int lit : node.clause) std::cerr << lit << " ";
+                std::cerr << " sharedLits=" << sharedLits.size() << std::endl;
+                
                 if (sharedLits.empty())
-                    nodeInterpolants[i] = TRUE_CNF;  // {}
+                    nodeInterpolants[i] = FALSE_CNF;
                 else
-                    nodeInterpolants[i] = {sharedLits};  // one clause
-                if (i == 41) { std::cerr << "DEBUG node41 clause: "; for (int lit : node.clause) std::cerr << lit << " "; std::cerr << " sharedLits=" << sharedLits.size() << std::endl; }
-                if (i == 105) { std::cerr << "DEBUG node105 clause: "; for (int lit : node.clause) std::cerr << lit << " "; std::cerr << " sharedLits=" << sharedLits.size() << std::endl; }
+                    nodeInterpolants[i] = {sharedLits};
+            } else {
+                nodeInterpolants[i] = TRUE_CNF;
             }
-            // DEBUG node 25
-            if (i == 25) {
-                std::cerr << "DEBUG node25 clause: ";
-                for (int lit : nodes[i].clause) std::cerr << lit << " ";
-                std::cerr << std::endl;
-            }
-            // END DEBUG
         } else {
             if (node.chainIds.empty()) {
                 nodeInterpolants[i] = TRUE_CNF;
@@ -207,8 +205,10 @@ std::vector<std::vector<int>> Interpolator::computeInterpolant() {
                             << (i2.size()==1 && i2[0].empty() ? " (FALSE)" : (i2.empty() ? " (TRUE)" : " (other)"))
                             << std::endl;
 
-                // McMillan system: always OR
-                result = cnfOr(result, i2);
+                if (aLocalVars.count(var))
+                    result = cnfOr(result, i2);
+                else
+                    result = cnfAnd(result, i2);
             }
 
             nodeInterpolants[i] = result;

@@ -83,7 +83,7 @@ bool ModelChecker::check(int maxBound, int skip) {
         }
         fclose(f);
 
-        if (foundCex) {
+        if (foundCex && k > skip) {
             if (!accumulated.empty()) {
                 // May be spurious — verify with pure BMC from real init
                 CNFGenerator bmc_gen(aig);
@@ -106,6 +106,10 @@ bool ModelChecker::check(int maxBound, int skip) {
             std::cout << "Counterexample found at bound " << k << std::endl;
             return false;
         }
+
+        // Bounds at or below skip assert no bad clause — the formula encodes
+        // no question, so neither SAT nor UNSAT carries information here.
+        if (k <= skip) continue;
 
         if (!unsat) continue;
 

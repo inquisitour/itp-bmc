@@ -24,11 +24,15 @@ bool parseAiger(const std::string& filename, AIG& aig) {
     for (unsigned i = 0; i < a->num_inputs; i++)
         aig.inputs.push_back(a->inputs[i].lit);
 
+    for (unsigned i = 0; i < a->num_constraints; i++)
+        aig.constraints.push_back(a->constraints[i].lit);
+
     // Latches
     for (unsigned i = 0; i < a->num_latches; i++) {
         Latch l;
         l.var  = a->latches[i].lit;
         l.next = a->latches[i].next;
+        l.reset = a->latches[i].reset;
         aig.latches.push_back(l);
     }
 
