@@ -1,6 +1,7 @@
 #include "cnf_generator.h"
 #include <fstream>
 #include <iostream>
+#include <map>
 
 CNFGenerator::CNFGenerator(const AIG& aig) : aig(aig), nextVar(1), aPartClauses(0) {}
 
@@ -32,6 +33,26 @@ std::vector<int> CNFGenerator::getLatchCNFVars(int t) const {
             vars.push_back(varMap[t][v]);
     }
     return vars;
+}
+
+std::map<int,int> CNFGenerator::getLatchIdxToCNF0() const {
+    std::map<int,int> m;
+    for (size_t i = 0; i < aig.latches.size(); i++) {
+        unsigned v = AIG::lit2var(aig.latches[i].var);
+        if ((int)varMap.size() > 0 && varMap[0][v] != 0)
+            m[(int)i] = varMap[0][v];
+    }
+    return m;
+}
+
+std::map<int,int> CNFGenerator::getCNFToLatchIdx() const {
+    std::map<int,int> m;
+    for (size_t i = 0; i < aig.latches.size(); i++) {
+        unsigned v = AIG::lit2var(aig.latches[i].var);
+        if ((int)varMap.size() > 1 && varMap[1][v] != 0)
+            m[varMap[1][v]] = (int)i;
+    }
+    return m;
 }
 
 void CNFGenerator::addClause(const std::vector<int>& clause) {
@@ -90,10 +111,16 @@ void CNFGenerator::generateBMC(int k, int skip) {
     nextVar = 1;
     aPartClauses = 0;
 
-    // Initial state
+    // Pre-allocate t=1 latch vars first so they get low CNF IDs
+    // This makes MiniSAT use them as decision variables → shared pivots in proof
+    if (k >= 1) {
+        for (const auto& latch : aig.latches)
+            getCNFVar(latch.var, 1);
+    }
+
     encodeInit();
     if (k >= 1) encodeTransition(0);
-    aPartClauses = (int)clauses.size();  // A = init + T(s0,s1)
+    aPartClauses = (int)clauses.size();
 
     // Transitions AND gates for timeframes 1..k-1
     for (int t = 1; t < k; t++) {
@@ -114,6 +141,60 @@ void CNFGenerator::generateBMC(int k, int skip) {
         if (!badClause.empty())
             addClause(badClause);
     }
+}
+
+void CNFGenerator::generateIMC(int k,
+    const std::vector<std::vector<std::pair<int,bool>>>& prevApprox)
+{
+    clauses.clear();
+    varMap.clear();
+    nextVar = 1;
+    aPartClauses = 0;
+
+    // Encode transition T(s0,s1) — establishes t=0 and t=1 CNF var IDs
+    encodeTransition(0);
+
+    // Auxiliary selector variable: sel=0 means init, sel=1 means prevApprox
+    int sel = nextVar++;
+
+    // Init branch: ¬sel → latch_i = 0 for all latches
+    for (const auto& latch : aig.latches) {
+        int var = getCNFVar(latch.var, 0);
+        // sel ∨ ¬latch_i  (if ¬sel, then latch_i must be 0)
+        addClause({sel, -var});
+    }
+
+    // prevApprox branch: sel → each clause of prevApprox
+    auto latchToCNF0 = getLatchIdxToCNF0();
+    for (const auto& latchClause : prevApprox) {
+        std::vector<int> cnfClause;
+        cnfClause.push_back(-sel); // ¬sel → skip this clause
+        bool valid = true;
+        for (auto [idx, neg] : latchClause) {
+            auto it = latchToCNF0.find(idx);
+            if (it == latchToCNF0.end()) { valid = false; break; }
+            cnfClause.push_back(neg ? -(it->second) : it->second);
+        }
+        if (valid && cnfClause.size() > 1)
+            addClause(cnfClause);
+    }
+
+    aPartClauses = (int)clauses.size(); // A = (init ∨ prevApprox) ∧ T(s0,s1)
+
+    // B: remaining transitions t=1..k-1
+    for (int t = 1; t < k; t++)
+        encodeTransition(t);
+
+    // AND gates at final timeframe k
+    for (const auto& gate : aig.ands)
+        encodeAnd(gate, k);
+
+    // Bad at final timeframe k
+    std::vector<int> badClause;
+    for (const auto& out : aig.outputs)
+        badClause.push_back(getCNFVar(out, k));
+    if (!badClause.empty())
+        addClause(badClause);
 }
 
 void CNFGenerator::writeDIMACS(const std::string& filename) {

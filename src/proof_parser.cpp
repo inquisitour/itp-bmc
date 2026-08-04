@@ -1,5 +1,7 @@
 #include "proof_parser.h"
 #include <cstdio>
+#include <ostream>
+#include <iostream>
 
 uint64_t ProofParser::getUInt(FILE* f) {
     uint64_t val = 0;
@@ -71,6 +73,22 @@ bool ProofParser::parse(const std::string& filename) {
                 // Deletion - don't add node, don't increment id
                 continue;
             }
+        }
+
+        // DEBUG
+        if (id == 78) {
+            std::cerr << "DEBUG node78 chainIds:";
+            for (int x : node.chainIds) std::cerr << " " << x;
+            std::cerr << " chainVars:";
+            for (int x : node.chainVars) std::cerr << " " << x;
+            std::cerr << std::endl;
+        }
+        // END DEBUG
+
+        if (!node.isRoot && node.chainVars.size() + 1 != node.chainIds.size()) {
+            std::cerr << "DEBUG MISMATCH id=" << id 
+                    << " chainIds=" << node.chainIds.size() 
+                    << " chainVars=" << node.chainVars.size() << std::endl;
         }
         
         nodes.push_back(node);

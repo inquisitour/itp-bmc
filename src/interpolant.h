@@ -7,9 +7,9 @@
 
 class Interpolator {
 public:
-    // A-part: clauses 0..splitPoint-1, B-part: splitPoint..end
-    // sharedVars: variables appearing in both A and B
-    Interpolator(const ProofParser& proof, int splitPoint, 
+    Interpolator(const ProofParser& proof,
+                 const std::vector<std::vector<int>>& aPartClauses,
+                 const std::vector<std::vector<int>>& bPartClauses,
                  const std::set<int>& sharedVars);
     
     // Returns interpolant as CNF (vector of clauses)
@@ -17,8 +17,11 @@ public:
 
 private:
     const ProofParser& proof;
-    int splitPoint;
+    const std::vector<std::vector<int>>& aPartClauses;
+    const std::vector<std::vector<int>>& bPartClauses;
     std::set<int> sharedVars;
+    std::set<int> aVars;
+    std::set<int> aLocalVars;
     
     // Interpolant for each proof node (as CNF clause indices)
     std::vector<std::vector<std::vector<int>>> nodeInterpolants;
