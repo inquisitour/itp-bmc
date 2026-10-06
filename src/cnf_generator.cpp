@@ -148,6 +148,23 @@ void CNFGenerator::generateBMC(int k, int skip) {
     }
 }
 
+void CNFGenerator::generateInitBad() {
+    clauses.clear();
+    varMap.clear();
+    nextVar = 1;
+    aPartClauses = 0;
+    encodeInit();
+    for (const auto& gate : aig.ands)
+        encodeAnd(gate, 0);
+    for (unsigned c : aig.constraints)
+        addClause({getCNFVar(c, 0)});
+    std::vector<int> bad;
+    for (const auto& out : aig.outputs)
+        bad.push_back(getCNFVar(out, 0));
+    if (!bad.empty())
+        addClause(bad);
+}
+
 void CNFGenerator::generateIMC(int k, const std::vector<LatchCNF>& disjuncts)
 {
     clauses.clear();

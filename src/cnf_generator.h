@@ -16,6 +16,8 @@ public:
     void generateBMC(int k, int skip = 0);
 
     void generateIMC(int k, const std::vector<LatchCNF>& disjuncts);
+
+    void generateInitBad();
     
     // Get CNF in DIMACS format
     const std::vector<std::vector<int>>& getClauses() const { return clauses; }

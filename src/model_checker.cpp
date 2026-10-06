@@ -113,9 +113,24 @@ bool ModelChecker::check(int maxBound, int skip) {
             if (fgets(l, sizeof(l), rf)) sat = (l[0] == 'S');
             fclose(rf);
         }
-        if (sat) { std::cout << "Counterexample found at bound 1" << std::endl; return false; }
+        if (sat) { std::cout << "Counterexample found at bound 0" << std::endl; return false; }
         std::cout << "Fixpoint reached!" << std::endl;
         return true;
+    }
+
+    if (skip == 0) {
+        CNFGenerator g0(aig);
+        g0.generateInitBad();
+        g0.writeDIMACS(cnf_path);
+        std::remove(result_path.c_str());
+        (void)system((minisat + " " + cnf_path + " -r " + result_path + " > /dev/null 2>&1").c_str());
+        bool sat0 = false;
+        if (FILE* rf = fopen(result_path.c_str(), "r")) {
+            char l[16];
+            if (fgets(l, sizeof(l), rf)) sat0 = (l[0] == 'S');
+            fclose(rf);
+        }
+        if (sat0) { std::cout << "Counterexample found at bound 0" << std::endl; return false; }
     }
 
     for (int k = 1; k <= maxBound; k++) {
