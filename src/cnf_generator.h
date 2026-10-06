@@ -5,6 +5,9 @@
 #include <vector>
 #include <map>
 
+#include <utility>
+using LatchCNF = std::vector<std::vector<std::pair<int,bool>>>;
+
 class CNFGenerator {
 public:
     CNFGenerator(const AIG& aig);
@@ -12,9 +15,7 @@ public:
     // Generate CNF for BMC up to bound k with optional skip for initial states
     void generateBMC(int k, int skip = 0);
 
-    // IMC iteration: A = (init ∨ prevApprox) ∧ T(s0,s1), B = T(s1..sk) ∧ bad(sk)
-    // prevApprox: clauses expressed as (latch_index, negated) pairs over s0
-    void generateIMC(int k, const std::vector<std::vector<std::pair<int,bool>>>& prevApprox);
+    void generateIMC(int k, const std::vector<LatchCNF>& disjuncts);
     
     // Get CNF in DIMACS format
     const std::vector<std::vector<int>>& getClauses() const { return clauses; }

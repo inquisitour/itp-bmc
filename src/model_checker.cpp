@@ -12,6 +12,7 @@
 #include <string>
 #include <unistd.h>
 #include <climits>
+#include <stdexcept>
 
 static std::string getWorkdir() {
     const char* wd = getenv("BMC_WORKDIR");
@@ -29,220 +30,177 @@ static std::string getBinaryDir() {
     return ".";
 }
 
+// Is newI => (init OR F1 OR ... OR Fm)?  Decided by SAT:
+// newI AND NOT init AND NOT F1 AND ... must be UNSAT.
+// Latch i is SAT variable i+1; helper variables come after the latches.
+static bool impliedByApprox(const LatchCNF& newI,
+                            const std::vector<LatchCNF>& approx,
+                            const AIG& aig,
+                            const std::string& workdir,
+                            const std::string& minisat)
+{
+    int L = (int)aig.latches.size();
+    int next = L + 1;
+    auto lit = [](int idx, bool neg) { return neg ? -(idx + 1) : (idx + 1); };
+    std::vector<std::vector<int>> cls;
+
+    for (const auto& c : newI) {
+        std::vector<int> cl;
+        for (auto [idx, neg] : c) cl.push_back(lit(idx, neg));
+        cls.push_back(cl);
+    }
+
+    // NOT init: some latch with a defined reset differs from it
+    std::vector<int> notInit;
+    for (int i = 0; i < L; i++) {
+        if (aig.latches[i].reset == 0)      notInit.push_back(i + 1);
+        else if (aig.latches[i].reset == 1) notInit.push_back(-(i + 1));
+    }
+    if (notInit.empty()) return true;   // init is every state
+    cls.push_back(notInit);
+
+    // NOT Fj: some clause of Fj is violated
+    for (const auto& F : approx) {
+        if (F.empty()) return true;     // Fj is TRUE
+        std::vector<int> some;
+        for (const auto& c : F) {
+            int v = next++;
+            some.push_back(v);
+            for (auto [idx, neg] : c)
+                cls.push_back({-v, -lit(idx, neg)});
+        }
+        cls.push_back(some);
+    }
+
+    std::string cnf = workdir + "/fixpoint.cnf";
+    std::string res = workdir + "/fixpoint_result.txt";
+    {
+        std::ofstream out(cnf);
+        out << "p cnf " << (next - 1) << " " << cls.size() << "\n";
+        for (const auto& c : cls) {
+            for (int l : c) out << l << " ";
+            out << "0\n";
+        }
+    }
+    std::remove(res.c_str());
+    (void)system((minisat + " " + cnf + " -r " + res + " > /dev/null 2>&1").c_str());
+    FILE* f = fopen(res.c_str(), "r");
+    if (!f) return false;
+    char line[16];
+    bool unsat = fgets(line, sizeof(line), f) && line[0] == 'U';
+    fclose(f);
+    return unsat;
+}
+
 ModelChecker::ModelChecker(const AIG& aig) : aig(aig) {}
 
 bool ModelChecker::check(int maxBound, int skip) {
-    std::string workdir    = getWorkdir();
-    std::string minisat    = getBinaryDir() + "/minisatp/minisat";
-    std::string proof_path = workdir + "/proof.txt";
-    std::string cnf_path   = workdir + "/out.cnf";
+    std::string workdir     = getWorkdir();
+    std::string minisat     = getBinaryDir() + "/minisatp/minisat";
+    std::string proof_path  = workdir + "/proof.txt";
+    std::string cnf_path    = workdir + "/out.cnf";
     std::string result_path = workdir + "/result.txt";
 
-    // accumulated: interpolants renamed to s0, as (latch_idx, neg) pairs
-    std::vector<std::vector<std::pair<int,bool>>> accumulated;
-
     if (aig.latches.empty()) {
+        CNFGenerator g(aig);
+        g.generateBMC(1, 0);
+        g.writeDIMACS(cnf_path);
+        std::remove(result_path.c_str());
+        (void)system((minisat + " " + cnf_path + " -r " + result_path + " > /dev/null 2>&1").c_str());
+        bool sat = false;
+        if (FILE* rf = fopen(result_path.c_str(), "r")) {
+            char l[16];
+            if (fgets(l, sizeof(l), rf)) sat = (l[0] == 'S');
+            fclose(rf);
+        }
+        if (sat) { std::cout << "Counterexample found at bound 1" << std::endl; return false; }
         std::cout << "Fixpoint reached!" << std::endl;
         return true;
     }
 
     for (int k = 1; k <= maxBound; k++) {
+        if (k <= skip) continue;
         std::cout << "Checking bound " << k << "..." << std::endl;
 
-        // Generate CNF
-        CNFGenerator cnf_gen(aig);
-        if (accumulated.empty()) {
-            cnf_gen.generateBMC(k, skip);
-        } else {
-            cnf_gen.generateIMC(k, accumulated);
-        }
-        cnf_gen.writeDIMACS(cnf_path);
+        // Reachable over-approximation = init OR F1 OR F2 ...; restarts at init for every k
+        std::vector<LatchCNF> approx;
 
-        int aPartSize = cnf_gen.getAPartSize();
-        std::cerr << "DEBUG aPartSize=" << aPartSize << std::endl;
-        auto latchVars1 = cnf_gen.getLatchCNFVars(1);
-        std::cerr << "DEBUG latchVars1: ";
-        for (int v : latchVars1) std::cerr << v << " ";
-        std::cerr << std::endl;
-        auto cnfToLatchIdx = cnf_gen.getCNFToLatchIdx();
-        auto latchIdxToCNF0 = cnf_gen.getLatchIdxToCNF0();
+        for (int iter = 0; iter < 200; iter++) {
+            CNFGenerator cnf_gen(aig);
+            if (approx.empty()) cnf_gen.generateBMC(k, skip);
+            else                cnf_gen.generateIMC(k, approx);
+            cnf_gen.writeDIMACS(cnf_path);
 
-        // Run MiniSAT
-        std::remove(proof_path.c_str());
-        std::string cmd = minisat + " " + cnf_path + " -r " + result_path +
-                          " -p " + proof_path + " > /dev/null 2>&1";
-        (void)system(cmd.c_str());
+            auto latchVars1    = cnf_gen.getLatchCNFVars(1);
+            auto cnfToLatchIdx = cnf_gen.getCNFToLatchIdx();
 
-        FILE* f = fopen(result_path.c_str(), "r");
-        if (!f) continue;
-        char line[16];
-        bool unsat = false, foundCex = false;
-        if (fgets(line, sizeof(line), f)) {
-            unsat    = (line[0] == 'U');
-            foundCex = (line[0] == 'S');
-        }
-        fclose(f);
+            std::remove(proof_path.c_str());
+            std::remove(result_path.c_str());
+            (void)system((minisat + " " + cnf_path + " -r " + result_path +
+                          " -p " + proof_path + " > /dev/null 2>&1").c_str());
 
-        if (foundCex && k > skip) {
-            if (!accumulated.empty()) {
-                // May be spurious — verify with pure BMC from real init
-                CNFGenerator bmc_gen(aig);
-                bmc_gen.generateBMC(k, skip);
-                bmc_gen.writeDIMACS(cnf_path);
-                std::remove(proof_path.c_str());
-                (void)system((minisat + " " + cnf_path + " -r " + result_path + " > /dev/null 2>&1").c_str());
-                FILE* f2 = fopen(result_path.c_str(), "r");
-                bool realCex = false;
-                if (f2) {
-                    char l2[16];
-                    if (fgets(l2, sizeof(l2), f2)) realCex = (l2[0] == 'S');
-                    fclose(f2);
-                }
-                if (!realCex) {
-                    std::cout << "  Spurious counterexample, continuing..." << std::endl;
-                    continue;
-                }
+            FILE* f = fopen(result_path.c_str(), "r");
+            if (!f) { std::cerr << "ERROR: no solver result at bound " << k << std::endl; break; }
+            char line[16];
+            bool unsat = false, foundCex = false;
+            if (fgets(line, sizeof(line), f)) {
+                unsat    = (line[0] == 'U');
+                foundCex = (line[0] == 'S');
             }
-            std::cout << "Counterexample found at bound " << k << std::endl;
-            return false;
-        }
+            fclose(f);
 
-        // Bounds at or below skip assert no bad clause — the formula encodes
-        // no question, so neither SAT nor UNSAT carries information here.
-        if (k <= skip) continue;
+            if (foundCex) {
+                if (approx.empty()) {
+                    // pure BMC from the real init: this is a real counterexample
+                    std::cout << "Counterexample found at bound " << k << std::endl;
+                    return false;
+                }
+                std::cout << "  Approximation too coarse at bound " << k
+                          << " (iteration " << iter << "), increasing bound" << std::endl;
+                break;
+            }
+            if (!unsat) break;
 
-        if (!unsat) continue;
+            ProofParser proof;
+            if (!proof.parse(proof_path)) break;
 
-        // Extract interpolant
-        ProofParser proof;
-        if (!proof.parse(proof_path)) continue;
+            std::set<int> sharedVars(latchVars1.begin(), latchVars1.end());
+            Interpolator interp(proof, cnf_gen.getAPartClauses(), cnf_gen.getBPartClauses(), sharedVars);
+            std::vector<std::vector<int>> interpolant;
+            try {
+                interpolant = interp.computeInterpolant();
+            } catch (const std::runtime_error& e) {
+                std::cout << "  " << e.what() << std::endl;
+                std::cout << "Safe up to bound " << k << " (interpolation gave up; bounded result only)" << std::endl;
+                return true;
+            }
 
-        std::set<int> sharedVars(latchVars1.begin(), latchVars1.end());
-        auto aPartClauses = cnf_gen.getAPartClauses();
-        auto bPartClauses = cnf_gen.getBPartClauses();
-        Interpolator interp(proof, aPartClauses, bPartClauses, sharedVars);
-        auto interpolant = interp.computeInterpolant();
-
-        // Filter to shared-only clauses
-        {
-            std::vector<std::vector<int>> minimized;
-            for (const auto& clause : interpolant) {
-                bool allShared = true;
+            int bad = 0;
+            for (const auto& clause : interpolant)
                 for (int lit : clause)
-                    if (!sharedVars.count(std::abs(lit))) { allShared = false; break; }
-                if (allShared) minimized.push_back(clause);
+                    if (!sharedVars.count(std::abs(lit))) { bad++; break; }
+            if (bad) {
+                std::cerr << "ERROR: " << bad << " interpolant clauses contain non-latch variables" << std::endl;
+                break;
             }
-            interpolant = minimized;
-        }
 
-        std::cout << "  Interpolant: " << interpolant.size() << " clauses" << std::endl;
+            std::cout << "  Interpolant: " << interpolant.size() << " clauses" << std::endl;
+            if (interpolant.empty()) break;
 
-        if (interpolant.empty()) continue;
-
-        // Rename interpolant: s1 CNF vars → latch indices
-        std::vector<std::vector<std::pair<int,bool>>> interpByLatch;
-        for (const auto& clause : interpolant) {
-            std::vector<std::pair<int,bool>> latchClause;
-            bool valid = true;
-            for (int lit : clause) {
-                int var = std::abs(lit);
-                bool neg = (lit < 0);
-                auto it = cnfToLatchIdx.find(var);
-                if (it == cnfToLatchIdx.end()) { valid = false; break; }
-                latchClause.push_back({it->second, neg});
+            LatchCNF interpByLatch;
+            for (const auto& clause : interpolant) {
+                std::vector<std::pair<int,bool>> lc;
+                for (int lit : clause)
+                    lc.push_back({cnfToLatchIdx.at(std::abs(lit)), lit < 0});
+                interpByLatch.push_back(lc);
             }
-            if (valid && !latchClause.empty())
-                interpByLatch.push_back(latchClause);
-        }
 
-        std::cerr << "DEBUG cnfToLatchIdx size=" << cnfToLatchIdx.size() << std::endl;
-        std::cerr << "DEBUG latchVars1 size=" << latchVars1.size() << std::endl;
-        std::cerr << "DEBUG interpolant clauses=" << interpolant.size() << std::endl;
-        for (const auto& clause : interpolant) {
-            std::cerr << "DEBUG clause: ";
-            for (int lit : clause) std::cerr << lit << " ";
-            std::cerr << std::endl;
-        }
-        std::cerr << "DEBUG interpByLatch size=" << interpByLatch.size() << std::endl;
-
-        if (interpByLatch.empty()) continue;
-
-        // Fixpoint check: does interpByLatch → accumulated?
-        // Write CNF: interpByLatch (over s0) AND ¬(accumulated)
-        // If UNSAT → fixpoint
-        // Translate interpByLatch to CNF using latchIdxToCNF0
-        std::vector<std::vector<int>> fixClauses;
-        for (const auto& lc : interpByLatch) {
-            std::vector<int> c;
-            for (auto [idx, neg] : lc) {
-                auto it = latchIdxToCNF0.find(idx);
-                if (it == latchIdxToCNF0.end()) continue;
-                c.push_back(neg ? -(it->second) : it->second);
+            if (impliedByApprox(interpByLatch, approx, aig, workdir, minisat)) {
+                std::cout << "Fixpoint reached!" << std::endl;
+                return true;
             }
-            if (!c.empty()) fixClauses.push_back(c);
+            approx.push_back(interpByLatch);
         }
-
-        // Negate accumulated: ¬(c1 ∧ c2 ∧ ... ∧ cn)
-        // = for each clause ci, add selector sel_i
-        // sel_i true means ci is violated
-        // Need at least one sel_i true
-        int numVars = (int)latchIdxToCNF0.size();
-        int selBase = numVars + 1;
-
-        if (!accumulated.empty()) {
-            std::vector<int> atLeastOne;
-            for (size_t i = 0; i < accumulated.size(); i++) {
-                int sel = selBase + (int)i;
-                atLeastOne.push_back(sel);
-                for (auto [idx, neg] : accumulated[i]) {
-                    auto it = latchIdxToCNF0.find(idx);
-                    if (it == latchIdxToCNF0.end()) continue;
-                    int l = neg ? -(it->second) : it->second;
-                    fixClauses.push_back({-(sel), -l});
-                }
-            }
-            fixClauses.push_back(atLeastOne);
-        } else {
-            // No accumulated yet — fixpoint if interpolant implies init
-            // Init = all latches false at t=0
-            // Negation of init = at least one latch is true
-            std::vector<int> negInit;
-            for (auto [idx, cnfVar] : latchIdxToCNF0)
-                negInit.push_back(cnfVar);
-            if (!negInit.empty())
-                fixClauses.push_back(negInit);
-        }
-
-        // Write fixpoint check CNF
-        int totalVars = numVars + (int)accumulated.size();
-        std::string fp_cnf = workdir + "/fixpoint.cnf";
-        std::string fp_res = workdir + "/fixpoint_result.txt";
-        std::ofstream fp(fp_cnf);
-        fp << "p cnf " << totalVars << " " << fixClauses.size() << "\n";
-        for (const auto& c : fixClauses) {
-            for (int l : c) fp << l << " ";
-            fp << "0\n";
-        }
-        fp.close();
-
-        (void)system((minisat + " " + fp_cnf + " -r " + fp_res + " > /dev/null 2>&1").c_str());
-        FILE* fp_f = fopen(fp_res.c_str(), "r");
-        bool fixpointReached = false;
-        if (fp_f) {
-            char fl[16];
-            if (fgets(fl, sizeof(fl), fp_f))
-                fixpointReached = (fl[0] == 'U');
-            fclose(fp_f);
-        }
-
-        if (fixpointReached) {
-            std::cout << "Fixpoint reached!" << std::endl;
-            return true;
-        }
-
-        // Add to accumulated
-        for (const auto& c : interpByLatch)
-            accumulated.push_back(c);
     }
 
     std::cout << "Safe up to bound " << maxBound << std::endl;

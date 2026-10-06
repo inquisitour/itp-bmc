@@ -85,7 +85,7 @@ int main(int argc, char* argv[]) {
         };
 
         CNFGenerator g(aig);
-        g.generateIMC(1, accumulated);
+        g.generateIMC(1, {accumulated});
 
         int aSize = g.getAPartSize();
         const auto& cls = g.getClauses();

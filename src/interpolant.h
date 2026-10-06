@@ -22,6 +22,7 @@ private:
     std::set<int> sharedVars;
     std::set<int> aVars;
     std::set<int> aLocalVars;
+    std::set<std::vector<int>> aClauseSet;
     
     // Interpolant for each proof node (as CNF clause indices)
     std::vector<std::vector<std::vector<int>>> nodeInterpolants;

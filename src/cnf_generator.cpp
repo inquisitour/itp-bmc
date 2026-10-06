@@ -2,6 +2,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <algorithm>
 
 CNFGenerator::CNFGenerator(const AIG& aig) : aig(aig), nextVar(1), aPartClauses(0) {}
 
@@ -116,11 +117,9 @@ void CNFGenerator::generateBMC(int k, int skip) {
 
     encodeInit();
     if (k >= 1) encodeTransition(0);
-    // constraints at t=0 and t=1 → part of A
-    for (unsigned c : aig.constraints) {
+    // constraints at t=0 → part of A
+    for (unsigned c : aig.constraints)
         addClause({getCNFVar(c, 0)});
-        if (k >= 1) addClause({getCNFVar(c, 1)});
-    }
     aPartClauses = (int)clauses.size();
 
     // Transitions AND gates for timeframes 1..k-1
@@ -133,88 +132,85 @@ void CNFGenerator::generateBMC(int k, int skip) {
         encodeAnd(gate, k);
     }
 
-    // constraints at t=2..k → part of B
-    for (int t = 2; t <= k; t++)
+    // constraints at t=1..k → part of B
+    for (int t = 1; t <= k; t++)
         for (unsigned c : aig.constraints)
             addClause({getCNFVar(c, t)});
 
-    // Bad state only at final timeframe k
+    // Bad at ANY frame t in (skip, k]
     if (k > skip) {
         std::vector<int> badClause;
-        for (const auto& out : aig.outputs) {
-            badClause.push_back(getCNFVar(out, k));
-        }
+        for (int t = std::max(1, skip + 1); t <= k; t++)
+            for (const auto& out : aig.outputs)
+                badClause.push_back(getCNFVar(out, t));
         if (!badClause.empty())
             addClause(badClause);
     }
 }
 
-void CNFGenerator::generateIMC(int k,
-    const std::vector<std::vector<std::pair<int,bool>>>& prevApprox)
+void CNFGenerator::generateIMC(int k, const std::vector<LatchCNF>& disjuncts)
 {
     clauses.clear();
     varMap.clear();
     nextVar = 1;
     aPartClauses = 0;
 
-    // Allocate every latch's t=0 var FIRST, before sel and before the
-    // transition, so init / prevApprox / T all refer to the same variables.
+    // Every latch's t=0 var first, so init / approximation / T share variables
     for (const auto& latch : aig.latches)
         getCNFVar(latch.var, 0);
 
-    // Encode transition T(s0,s1) — establishes t=0 and t=1 CNF var IDs
     encodeTransition(0);
 
-    // Auxiliary selector variable: sel=0 means init, sel=1 means prevApprox
-    int sel = nextVar++;
+    auto latchToCNF0 = getLatchIdxToCNF0();
 
-    // Init branch: ¬sel → latch_i = 0 for all latches
+    // One selector per disjunct: sel[0] = init, sel[j+1] = disjuncts[j]
+    std::vector<int> sel;
+    for (size_t j = 0; j <= disjuncts.size(); j++)
+        sel.push_back(nextVar++);
+
+    // init OR F1 OR ... OR Fm
+    addClause(sel);
+
+    // sel[0] -> init (only latches with a defined reset)
     for (const auto& latch : aig.latches) {
         int var = getCNFVar(latch.var, 0);
-        // sel ∨ ¬latch_i  (if ¬sel, then latch_i must be 0)
-        addClause({sel, -var});
+        if (latch.reset == 0)      addClause({-sel[0], -var});
+        else if (latch.reset == 1) addClause({-sel[0], var});
     }
 
-    // prevApprox branch: sel → each clause of prevApprox
-    auto latchToCNF0 = getLatchIdxToCNF0();
-    for (const auto& latchClause : prevApprox) {
-        std::vector<int> cnfClause;
-        cnfClause.push_back(-sel); // ¬sel → skip this clause
-        bool valid = true;
-        for (auto [idx, neg] : latchClause) {
-            auto it = latchToCNF0.find(idx);
-            if (it == latchToCNF0.end()) { valid = false; break; }
-            cnfClause.push_back(neg ? -(it->second) : it->second);
+    // sel[j+1] -> every clause of disjuncts[j]
+    for (size_t j = 0; j < disjuncts.size(); j++) {
+        for (const auto& latchClause : disjuncts[j]) {
+            std::vector<int> c = {-sel[j + 1]};
+            for (auto [idx, neg] : latchClause) {
+                int v = latchToCNF0.at(idx);
+                c.push_back(neg ? -v : v);
+            }
+            addClause(c);
         }
-        if (valid && cnfClause.size() > 1)
-            addClause(cnfClause);
     }
 
-    // constraints at t=0 and t=1 → part of A
-    for (unsigned c : aig.constraints) {
+    // constraints at t=0 -> part of A
+    for (unsigned c : aig.constraints)
         addClause({getCNFVar(c, 0)});
-        addClause({getCNFVar(c, 1)});
-    }
 
-    aPartClauses = (int)clauses.size(); // A = (init ∨ prevApprox) ∧ T(s0,s1)
+    aPartClauses = (int)clauses.size();
 
-    // B: remaining transitions t=1..k-1
     for (int t = 1; t < k; t++)
         encodeTransition(t);
 
-    // AND gates at final timeframe k
     for (const auto& gate : aig.ands)
         encodeAnd(gate, k);
 
-    // constraints at t=2..k → part of B
-    for (int t = 2; t <= k; t++)
+    // constraints at t=1..k -> part of B
+    for (int t = 1; t <= k; t++)
         for (unsigned c : aig.constraints)
             addClause({getCNFVar(c, t)});
 
-    // Bad at final timeframe k
     std::vector<int> badClause;
-    for (const auto& out : aig.outputs)
-        badClause.push_back(getCNFVar(out, k));
+    for (int t = 1; t <= k; t++)
+        for (const auto& out : aig.outputs)
+            badClause.push_back(getCNFVar(out, t));
     if (!badClause.empty())
         addClause(badClause);
 }
