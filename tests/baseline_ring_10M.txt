@@ -1,0 +1,7 @@
+baseline 2026-10-18, no hints, ITP_MAXCROSS=10000000
+n=6 | Fixpoint reached! | Checking bound 6... | largest interpolant=57 | time=0.10s peakmem=5568KB | pdr invariant: 6 clauses
+n=7 | Fixpoint reached! | Checking bound 7... | largest interpolant=156 | time=0.12s peakmem=5684KB | pdr invariant: 7 clauses
+n=8 | Fixpoint reached! | Checking bound 8... | largest interpolant=284 | time=0.21s peakmem=6032KB | pdr invariant: 8 clauses
+n=9 | Fixpoint reached! | Checking bound 9... | largest interpolant=652 | time=0.74s peakmem=21700KB | pdr invariant: 9 clauses
+n=10 | Fixpoint reached! | Checking bound 10... | largest interpolant=1324 | time=3.80s peakmem=106172KB | pdr invariant: 10 clauses
+n=11 | Fixpoint reached! | Checking bound 11... | largest interpolant=2495 | time=11.20s peakmem=438352KB | pdr invariant: 11 clauses

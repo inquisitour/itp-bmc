@@ -4,6 +4,7 @@
 #include <ostream>
 #include <stdexcept>
 #include <string>
+#include <cstdlib>
 
 // We represent interpolants as CNF (vector of clauses).
 // Convention:
@@ -70,7 +71,15 @@ bool Interpolator::isALocal(int var) {
     return !isSharedVar(var);
 }
 
-static const size_t kMaxCross = 2000000;
+// static const size_t kMaxCross = 2000000;
+
+static size_t maxCross() {
+    static const size_t v = [] {
+        const char* e = getenv("ITP_MAXCROSS");
+        return e ? (size_t)strtoull(e, nullptr, 10) : (size_t)2000000;
+    }();
+    return v;
+}
 
 // Sort literals, drop duplicate literals, drop tautological clauses,
 // drop duplicate clauses. An empty clause makes the whole CNF FALSE.
@@ -100,7 +109,7 @@ static std::vector<std::vector<int>> cnfOr(
     if (i1.empty() || i2.empty()) return {};                 // TRUE
     if (i1.size() == 1 && i1[0].empty()) return i2;          // FALSE or I
     if (i2.size() == 1 && i2[0].empty()) return i1;
-    if (i1.size() * i2.size() > kMaxCross)
+    if (i1.size() * i2.size() > maxCross())
         throw std::runtime_error("interpolant too large: " + std::to_string(i1.size()) +
                                  " x " + std::to_string(i2.size()) + " clauses in an OR");
     std::vector<std::vector<int>> result;
