@@ -1,0 +1,6 @@
+baseline 2026-10-18, no hints, bound limit 30
+n=10 | ours: Fixpoint reached! time=5.13s peakmem=106036KB  | pdr invariant: 10 clauses
+n=11 | ours:   interpolant too large: 1856 x 1255 clauses in an OR Safe up to bound 10 (interpolation gave up; bounded result only) time=0.66s peakmem=53988KB  | pdr invariant: 11 clauses
+n=12 | ours:   interpolant too large: 3596 x 719 clauses in an OR Safe up to bound 11 (interpolation gave up; bounded result only) time=2.13s peakmem=144596KB  | pdr invariant: 12 clauses
+n=14 | ours:   interpolant too large: 5217 x 755 clauses in an OR Safe up to bound 13 (interpolation gave up; bounded result only) time=1.23s peakmem=117552KB  | pdr invariant: 14 clauses
+n=16 | ours:   interpolant too large: 8461 x 507 clauses in an OR Safe up to bound 15 (interpolation gave up; bounded result only) time=0.37s peakmem=27972KB  | pdr invariant: 16 clauses
